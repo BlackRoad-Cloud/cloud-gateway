@@ -1,0 +1,183 @@
+# BlackRoad OS — Kubernetes Manifests for Agent Fleet
+# Deploy the core 6 agents + gateway as containerized services
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blackroad
+  labels:
+    app.kubernetes.io/managed-by: blackroad-os
+
+---
+# ── Gateway Deployment ────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackroad-gateway
+  namespace: blackroad
+  labels:
+    app: blackroad-gateway
+    component: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: blackroad-gateway
+  template:
+    metadata:
+      labels:
+        app: blackroad-gateway
+    spec:
+      containers:
+      - name: gateway
+        image: ghcr.io/blackroad-os-inc/blackroad-gateway:latest
+        ports:
+        - containerPort: 8787
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: BLACKROAD_GATEWAY_BIND
+          value: "0.0.0.0"
+        - name: BLACKROAD_GATEWAY_PORT
+          value: "8787"
+        - name: BLACKROAD_ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: blackroad-provider-secrets
+              key: anthropic-api-key
+        - name: BLACKROAD_OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: blackroad-provider-secrets
+              key: openai-api-key
+        - name: BLACKROAD_OLLAMA_URL
+          value: "http://ollama.blackroad.svc.cluster.local:11434"
+        resources:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits:   { cpu: 1000m, memory: 512Mi }
+        livenessProbe:
+          httpGet: { path: /health, port: 8787 }
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet: { path: /health, port: 8787 }
+          initialDelaySeconds: 5
+          periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackroad-gateway
+  namespace: blackroad
+spec:
+  selector:
+    app: blackroad-gateway
+  ports:
+  - port: 8787
+    targetPort: 8787
+  type: ClusterIP
+
+---
+# ── Ollama StatefulSet ────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ollama
+  namespace: blackroad
+spec:
+  serviceName: ollama
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        ports:
+        - containerPort: 11434
+        volumeMounts:
+        - name: ollama-data
+          mountPath: /root/.ollama
+        resources:
+          requests: { cpu: 2000m, memory: 8Gi }
+          limits:   { cpu: 8000m, memory: 32Gi }
+  volumeClaimTemplates:
+  - metadata:
+      name: ollama-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: blackroad
+spec:
+  selector:
+    app: ollama
+  ports:
+  - port: 11434
+    targetPort: 11434
+  type: ClusterIP
+
+---
+# ── Agent Fleet Deployment ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackroad-agents
+  namespace: blackroad
+  labels:
+    app: blackroad-agents
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: blackroad-agents
+  template:
+    metadata:
+      labels:
+        app: blackroad-agents
+    spec:
+      containers:
+      - name: agent
+        image: ghcr.io/blackroad-os/blackroad-agent-runtime:latest
+        env:
+        - name: BLACKROAD_GATEWAY_URL
+          value: "http://blackroad-gateway.blackroad.svc.cluster.local:8787"
+        resources:
+          requests: { cpu: 100m, memory: 128Mi }
+          limits:   { cpu: 500m, memory: 512Mi }
+
+---
+# ── HPA — Auto-scale agents to 30K ───────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: blackroad-agents-hpa
+  namespace: blackroad
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: blackroad-agents
+  minReplicas: 6
+  maxReplicas: 30000
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
