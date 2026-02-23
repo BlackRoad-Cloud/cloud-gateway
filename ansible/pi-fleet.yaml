@@ -1,0 +1,113 @@
+---
+# BlackRoad Infrastructure — Ansible Pi Fleet Playbook
+# Provisions all Raspberry Pi nodes for BlackRoad OS agent runtime.
+#
+# Usage:
+#   ansible-playbook -i inventory.yaml ansible/pi-fleet.yaml
+#   ansible-playbook -i inventory.yaml ansible/pi-fleet.yaml --tags ollama
+#   ansible-playbook -i inventory.yaml ansible/pi-fleet.yaml --limit aria64
+
+- name: BlackRoad Pi Fleet — Base Setup
+  hosts: pi_fleet
+  become: true
+  vars:
+    blackroad_home: /home/pi/blackroad
+    ollama_models:
+      - llama3.2
+      - qwen2.5:7b
+    agent_service_user: pi
+
+  tasks:
+    - name: Update apt cache
+      apt: update_cache=yes cache_valid_time=3600
+
+    - name: Install system dependencies
+      apt:
+        name:
+          - git
+          - curl
+          - sqlite3
+          - python3-pip
+          - python3-venv
+          - mosquitto
+          - mosquitto-clients
+          - htop
+          - net-tools
+        state: present
+
+    - name: Install Ollama
+      tags: [ollama]
+      shell: curl -fsSL https://ollama.ai/install.sh | sh
+      args:
+        creates: /usr/local/bin/ollama
+
+    - name: Enable and start Ollama service
+      tags: [ollama]
+      systemd:
+        name: ollama
+        enabled: true
+        state: started
+
+    - name: Pull Ollama models
+      tags: [ollama, models]
+      command: "ollama pull {{ item }}"
+      loop: "{{ ollama_models }}"
+      become_user: "{{ agent_service_user }}"
+
+    - name: Clone/update BlackRoad repository
+      tags: [deploy]
+      git:
+        repo: https://github.com/BlackRoad-OS-Inc/blackroad-agents.git
+        dest: "{{ blackroad_home }}"
+        version: main
+        force: yes
+      become_user: "{{ agent_service_user }}"
+
+    - name: Install Python dependencies
+      tags: [deploy]
+      pip:
+        requirements: "{{ blackroad_home }}/requirements.txt"
+        virtualenv: "{{ blackroad_home }}/.venv"
+        virtualenv_command: python3 -m venv
+      become_user: "{{ agent_service_user }}"
+
+    - name: Install BlackRoad agent systemd service
+      template:
+        src: templates/blackroad-agents.service.j2
+        dest: /etc/systemd/system/blackroad-agents.service
+      notify: restart agents
+
+    - name: Enable BlackRoad agents service
+      systemd:
+        name: blackroad-agents
+        enabled: true
+        daemon_reload: true
+        state: started
+
+    - name: Configure Cloudflare tunnel (primary only)
+      tags: [tunnel]
+      when: inventory_hostname == 'blackroad-pi'
+      systemd:
+        name: cloudflared
+        enabled: true
+        state: started
+
+  handlers:
+    - name: restart agents
+      systemd:
+        name: blackroad-agents
+        state: restarted
+
+- name: BlackRoad Pi Fleet — Health Check
+  hosts: pi_fleet
+  tasks:
+    - name: Check Ollama
+      uri:
+        url: "http://localhost:11434/api/tags"
+        return_content: yes
+      register: ollama_health
+      ignore_errors: yes
+
+    - name: Report status
+      debug:
+        msg: "{{ inventory_hostname }}: Ollama={{ 'OK' if ollama_health.status == 200 else 'DOWN' }}"
