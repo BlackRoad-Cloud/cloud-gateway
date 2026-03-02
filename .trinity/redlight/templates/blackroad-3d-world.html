@@ -462,27 +462,46 @@
             road.receiveShadow = true;
             scene.add(road);
 
-            // Road lines (dashes)
+            // Road lines (dashes) - use InstancedMesh to avoid hundreds of individual Meshes
             const lineMaterial = new THREE.MeshBasicMaterial({ color: COLORS.hotPink });
-            
-            for (let i = 0; i < 200; i++) {
-                const lineGeometry = new THREE.BoxGeometry(0.3, 0.05, 4);
-                const line = new THREE.Mesh(lineGeometry, lineMaterial);
-                line.position.set(0, 0.03, -i * 10);
-                roadLines.push(line);
-                scene.add(line);
-            }
+            const dashCount = 200;
+            const dashGeometry = new THREE.BoxGeometry(0.3, 0.05, 4);
+            const dashInstancedMesh = new THREE.InstancedMesh(dashGeometry, lineMaterial, dashCount);
+            const dashMatrix = new THREE.Matrix4();
 
-            // Side lines
+            for (let i = 0; i < dashCount; i++) {
+                dashMatrix.makeTranslation(0, 0.03, -i * 10);
+                dashInstancedMesh.setMatrixAt(i, dashMatrix);
+                // Keep track of road line instances logically if needed elsewhere
+                roadLines.push({
+                    type: 'dash',
+                    index: i,
+                    mesh: dashInstancedMesh
+                });
+            }
+            dashInstancedMesh.instanceMatrix.needsUpdate = true;
+            scene.add(dashInstancedMesh);
+
+            // Side lines - also use InstancedMesh per side
             const sideLineMaterial = new THREE.MeshBasicMaterial({ color: COLORS.amber });
+            const sideLineCount = 200;
+            const sideLineGeometry = new THREE.BoxGeometry(0.2, 0.05, 8);
+            const sideLineMatrix = new THREE.Matrix4();
+
             for (let side of [-1, 1]) {
-                for (let i = 0; i < 200; i++) {
-                    const sideLineGeometry = new THREE.BoxGeometry(0.2, 0.05, 8);
-                    const sideLine = new THREE.Mesh(sideLineGeometry, sideLineMaterial);
-                    sideLine.position.set(side * 9, 0.03, -i * 10);
-                    roadLines.push(sideLine);
-                    scene.add(sideLine);
+                const sideInstancedMesh = new THREE.InstancedMesh(sideLineGeometry, sideLineMaterial, sideLineCount);
+                for (let i = 0; i < sideLineCount; i++) {
+                    sideLineMatrix.makeTranslation(side * 9, 0.03, -i * 10);
+                    sideInstancedMesh.setMatrixAt(i, sideLineMatrix);
+                    roadLines.push({
+                        type: 'side',
+                        side: side,
+                        index: i,
+                        mesh: sideInstancedMesh
+                    });
                 }
+                sideInstancedMesh.instanceMatrix.needsUpdate = true;
+                scene.add(sideInstancedMesh);
             }
         }
 
