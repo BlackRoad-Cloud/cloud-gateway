@@ -13,7 +13,7 @@ The Light Trinity is BlackRoad OS's unified intelligence, templating, and infras
 ### 🔴 RedLight — Template & Brand System
 **Purpose:** Visual identity, brand consistency, design templates
 
-- **18 HTML brand templates** for landing pages, animations, 3D worlds
+- **HTML brand templates** for landing pages, animations, 3D worlds
 - **Template generation system** for creating new branded pages
 - **Design patterns** following golden ratio (φ = 1.618)
 - **Brand colors:** Amber → Hot Pink → Violet → Electric Blue gradient
