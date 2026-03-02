@@ -561,14 +561,25 @@
 
         function createParticles() {
             const particleColors = [COLORS.hotPink, COLORS.amber, COLORS.electricBlue, COLORS.violet];
+
+            // Pre-create a small set of shared geometries to avoid allocating a new
+            // SphereGeometry for every single particle.
+            const particleGeometries = [
+                new THREE.SphereGeometry(0.05, 8, 8),
+                new THREE.SphereGeometry(0.1, 8, 8),
+                new THREE.SphereGeometry(0.15, 8, 8)
+            ];
+
+            // Pre-create materials for each color so they can be reused across particles.
+            const particleMaterials = particleColors.map(color => new THREE.MeshBasicMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.8
+            }));
             
             for (let i = 0; i < 500; i++) {
-                const geometry = new THREE.SphereGeometry(0.05 + Math.random() * 0.1, 8, 8);
-                const material = new THREE.MeshBasicMaterial({
-                    color: particleColors[Math.floor(Math.random() * particleColors.length)],
-                    transparent: true,
-                    opacity: 0.8
-                });
+                const geometry = particleGeometries[Math.floor(Math.random() * particleGeometries.length)];
+                const material = particleMaterials[Math.floor(Math.random() * particleMaterials.length)];
                 const particle = new THREE.Mesh(geometry, material);
                 
                 particle.position.set(
