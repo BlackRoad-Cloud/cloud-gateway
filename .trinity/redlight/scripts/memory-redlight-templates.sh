@@ -2,7 +2,10 @@
 # RedLight Memory Templates
 # Standardized logging for template management with BlackRoad memory system
 
-set -e
+# Enable 'exit on error' only when executed directly, not when sourced.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    set -e
+fi
 
 MEMORY_SYSTEM="$HOME/memory-system.sh"
 
