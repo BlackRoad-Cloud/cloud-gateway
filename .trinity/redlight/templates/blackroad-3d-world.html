@@ -804,10 +804,16 @@
             }
         }
 
-        function animate() {
+        function animate(timestamp) {
             requestAnimationFrame(animate);
-            time += 0.016;
 
+            // Use real elapsed time between frames (in seconds) instead of a fixed 0.016 step
+            if (typeof animate.lastTime !== 'number') {
+                animate.lastTime = timestamp || performance.now();
+            }
+            const deltaSeconds = ((timestamp || performance.now()) - animate.lastTime) / 1000;
+            animate.lastTime = (timestamp || performance.now());
+            time += deltaSeconds;
             // Update speed based on input
             if (keys.forward) targetSpeed = Math.min(targetSpeed + 0.1, 8);
             if (keys.backward) targetSpeed = Math.max(targetSpeed - 0.15, 0.5);
